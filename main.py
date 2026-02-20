@@ -2,7 +2,7 @@ import os
 import re
 import logging
 from decimal import Decimal
-from datetime import datetime, timedelta
+
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from database import get_db_connection, init_db
@@ -640,6 +640,8 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 # Master 续费
 # ==============================
+from datetime import datetime, timedelta, timezone
+
 async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_master(update):
         return
@@ -652,7 +654,7 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_id = int(context.args[0])
             days = int(context.args[1])
     except:
-        await update.message.reply_text("用法: /续费 用户ID 天数 或 回复用户 /续费 天数")
+        await update.message.reply_text("用法: /续费 用户ID 天数")
         return
 
     conn = get_db_connection()
@@ -661,9 +663,8 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT expire_date FROM admins WHERE user_id=%s", (target_id,))
     row = cursor.fetchone()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)  # 🔥 สำคัญ
 
-    # 如果还没过期 → 叠加
     if row and row[0] > now:
         new_expire = row[0] + timedelta(days=days)
     else:
