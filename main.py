@@ -233,8 +233,8 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     # ✅ คำนวณยอดรวมทั้งวัน
     total = sum(Decimal(r[0]) for r in rows)
 
-    text = "📋 本轮记录:\n\n"
-    text = "━━━━━━━━━━━━━━━\n"
+    text = "📋 本轮记录:\n━━━━━━━━━━━━━━━\n"
+    
 
     if len(rows) > 5 and not show_all:
         text += f"... 共 {len(rows)} 条记录\n\n"
