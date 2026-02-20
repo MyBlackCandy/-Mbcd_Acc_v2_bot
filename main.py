@@ -232,19 +232,21 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
 
     text = "📋 本轮记录:\n\n"
 
-    # 🔢 带编号
-    for index, r in enumerate(display, start=1):
+    # 🔥 ถ้ามีมากกว่า 5 รายการ ให้แสดง ... ก่อน
+    if len(rows) > 5 and not show_all:
+        text += f"... \n"
+
+    start_number = len(rows) - len(display) + 1
+
+    for index, r in enumerate(display, start=start_number):
         amount, qty, item, user, ts = r
         total += Decimal(amount)
-
+    
         line = f"{index}. {Decimal(amount):.2f}"
         if qty and item:
             line += f" ({qty} {item})"
 
         text += line + "\n"
-
-    if len(rows) > 5 and not show_all:
-        text += f"... 共 {len(rows)} 条记录\n"
 
     # 分类汇总
     for r in rows:
