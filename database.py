@@ -82,7 +82,7 @@ def init_db():
         """)
 
         # 索引
-        cursor.execute("""
+       cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_history_chat_time
         ON history(chat_id, timestamp);
         """)
