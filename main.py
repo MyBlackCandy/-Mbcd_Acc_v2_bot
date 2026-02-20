@@ -265,6 +265,61 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     await update.message.reply_text(text)
 
 # ==============================
+# 记账（必须存在）
+# ==============================
+
+async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_operator(update):
+        return
+
+    text = update.message.text.strip()
+
+    # รองรับ:
+    # +100
+    # +100 USD
+    # +95 0.048 ETH
+    # +1,200.50 0.002 BTC
+    match = re.match(
+        r'^([+-])\s*([\d,]+(?:\.\d{1,2})?)'
+        r'(?:\s+([\d\.]+))?'
+        r'(?:\s+([A-Za-z]+))?$',
+        text
+    )
+
+    if not match:
+        return
+
+    sign = match.group(1)
+    amount_str = match.group(2).replace(",", "")
+    quantity = match.group(3)
+    item = match.group(4)
+
+    amount = Decimal(amount_str)
+
+    if sign == "-":
+        amount = -amount
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO history (chat_id, amount, quantity, item, user_name)
+        VALUES (%s,%s,%s,%s,%s)
+    """, (
+        update.effective_chat.id,
+        amount,
+        Decimal(quantity) if quantity else None,
+        item.upper() if item else None,
+        update.message.from_user.first_name
+    ))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    await send_summary(update, context)
+
+# ==============================
 # 撤销
 # ==============================
 
