@@ -100,12 +100,12 @@ def init_db():
         """)
 
         # ==============================
-        # Owner（有期限）
+        # Owner（无时区版本）
         # ==============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS admins (
-            user_id BIGINT PRIMARY KEY,
-            expire_date TIMESTAMP WITH TIME ZONE NOT NULL
+        user_id BIGINT PRIMARY KEY,
+        expire_date TIMESTAMP NOT NULL
         );
         """)
 
