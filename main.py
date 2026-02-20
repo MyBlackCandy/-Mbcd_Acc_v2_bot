@@ -237,7 +237,7 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     
 
     if len(rows) > 5 and not show_all:
-        text += f"... 共 {len(rows)} 条记录\n\n"
+        text += f"...\n"
 
     start_number = len(rows) - len(display) + 1
 
