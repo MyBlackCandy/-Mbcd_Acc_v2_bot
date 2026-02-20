@@ -661,11 +661,7 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT expire_date FROM admins WHERE user_id=%s", (target_id,))
     row = cursor.fetchone()
 
-    now = datetime.utcnow()
-    if row and row[0] > now:
-        new_expire = row[0] + timedelta(days=days)
-    else:
-        new_expire = now + timedelta(days=days)
+    return row and row[0] > datetime.utcnow()
 
     cursor.execute("""
         INSERT INTO admins (user_id, expire_date)
