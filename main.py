@@ -640,7 +640,6 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 # Master 续费
 # ==============================
-
 async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_master(update):
         return
@@ -658,10 +657,17 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
     cursor.execute("SELECT expire_date FROM admins WHERE user_id=%s", (target_id,))
     row = cursor.fetchone()
 
-    return row and row[0] > datetime.utcnow()
+    now = datetime.utcnow()
+
+    # 如果还没过期 → 叠加
+    if row and row[0] > now:
+        new_expire = row[0] + timedelta(days=days)
+    else:
+        new_expire = now + timedelta(days=days)
 
     cursor.execute("""
         INSERT INTO admins (user_id, expire_date)
@@ -675,7 +681,8 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(
-        f"✅ 已续费 {days} 天\n到期时间: {new_expire.strftime('%Y-%m-%d %H:%M')}"
+        f"✅ 已续费 {days} 天\n"
+        f"到期时间: {new_expire.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 # ==============================
 # 启动
