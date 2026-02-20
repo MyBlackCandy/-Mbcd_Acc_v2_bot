@@ -234,6 +234,7 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     total = sum(Decimal(r[0]) for r in rows)
 
     text = "📋 本轮记录:\n\n"
+    text = "━━━━━━━━━━━━━━━\n"
 
     if len(rows) > 5 and not show_all:
         text += f"... 共 {len(rows)} 条记录\n\n"
@@ -243,7 +244,7 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     for index, r in enumerate(display, start=start_number):
         amount, qty, item, user, ts = r
 
-        line = f"{index}. {Decimal(amount):.2f}"
+        line = f"{index}. {Decimal(amount):,.2f}"
         if qty and item:
             line += f" ({qty} {item})"
 
@@ -266,18 +267,18 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
         if qty:
             summary[key]["qty"] += Decimal(qty)
 
-    text += "\n━━━━━━━━━━━━━━━\n"
+    text += "━━━━━━━━━━━━━━━\n"
     text += "📊 分类汇总:\n"
 
     for k, v in summary.items():
-        line = f"{k}: {v['total']:.2f}"
+        line = f"{k}: {v['total']:,.2f}"
         if v["qty"] > 0:
             line += f" | 数量: {v['qty']}"
         line += f" | {v['count']} 笔"
         text += line + "\n"
 
     text += "━━━━━━━━━━━━━━━\n"
-    text += f"💰 总计: {total:.2f}"
+    text += f"💰 总计: {total:,.2f}"
 
     cursor.close()
     conn.close()
@@ -372,7 +373,7 @@ async def undo_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("DELETE FROM history WHERE id=%s", (row[0],))
     conn.commit()
 
-    deleted_text = f"{Decimal(row[1]):.2f}"
+    deleted_text = f"{Decimal(row[1]):,.2f}"
     if row[2] and row[3]:
         deleted_text += f" ({row[2]} {row[3]})"
 
