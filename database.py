@@ -16,9 +16,9 @@ def init_db():
     try:
         cursor = conn.cursor()
 
-        # ==================================================
+        # ==============================
         # 群组设置
-        # ==================================================
+        # ==============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_settings (
             chat_id BIGINT PRIMARY KEY,
@@ -27,6 +27,7 @@ def init_db():
         );
         """)
 
+        # 自动补充旧字段（防止旧版本缺失）
         cursor.execute("""
         ALTER TABLE chat_settings
         ADD COLUMN IF NOT EXISTS timezone INTEGER DEFAULT 0;
@@ -37,22 +38,20 @@ def init_db():
         ADD COLUMN IF NOT EXISTS work_start TIME DEFAULT '00:00';
         """)
 
-        # ==================================================
-        # 账单记录
-        # ==================================================
+        # ==============================
+        # 账单记录（支持小数）
+        # ==============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id SERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL,
-            amount NUMERIC(18,2) NOT NULL,
-            quantity NUMERIC,
-            item TEXT,
+            amount NUMERIC(15,2) NOT NULL,
             user_name TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
         """)
 
-        # 🔥 升级旧数据库 amount INTEGER → NUMERIC
+        # 🔥 如果旧数据库是 INTEGER → 自动升级为 NUMERIC
         cursor.execute("""
         DO $$
         BEGIN
@@ -64,32 +63,20 @@ def init_db():
                 AND data_type='integer'
             ) THEN
                 ALTER TABLE history
-                ALTER COLUMN amount TYPE NUMERIC(18,2)
-                USING amount::NUMERIC(18,2);
+                ALTER COLUMN amount TYPE NUMERIC(15,2)
+                USING amount::NUMERIC(15,2);
             END IF;
         END$$;
         """)
 
-        # 🔥 自动补充字段（防止旧版本缺失）
-        cursor.execute("""
-        ALTER TABLE history
-        ADD COLUMN IF NOT EXISTS quantity NUMERIC;
-        """)
-
-        cursor.execute("""
-        ALTER TABLE history
-        ADD COLUMN IF NOT EXISTS item TEXT;
-        """)
-
-        # 索引
         cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_history_chat_time
         ON history(chat_id, timestamp);
         """)
 
-        # ==================================================
+        # ==============================
         # 操作者
-        # ==================================================
+        # ==============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS team_members (
             member_id BIGINT,
@@ -99,13 +86,13 @@ def init_db():
         );
         """)
 
-        # ==================================================
-        # Owner（无时区版本）
-        # ==================================================
+        # ==============================
+        # Owner（有期限）
+        # ==============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS admins (
             user_id BIGINT PRIMARY KEY,
-            expire_date TIMESTAMP NOT NULL
+            expire_date TIMESTAMP WITH TIME ZONE NOT NULL
         );
         """)
 
