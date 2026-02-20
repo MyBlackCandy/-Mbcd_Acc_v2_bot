@@ -16,15 +16,18 @@ def init_db():
     try:
         cursor = conn.cursor()
 
+        # Chat settings
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_settings (
             chat_id BIGINT PRIMARY KEY,
             base_unit TEXT DEFAULT 'USD',
             timezone INTEGER DEFAULT 0,
-            work_start TIME DEFAULT '00:00'
+            work_start TIME DEFAULT '00:00',
+            language TEXT DEFAULT 'zh'
         );
         """)
 
+        # History
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id SERIAL PRIMARY KEY,
@@ -37,6 +40,12 @@ def init_db():
         """)
 
         cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_history_chat
+        ON history(chat_id, timestamp);
+        """)
+
+        # Members (assistant / operator)
+        cursor.execute("""
         CREATE TABLE IF NOT EXISTS members (
             user_id BIGINT,
             chat_id BIGINT,
@@ -45,6 +54,7 @@ def init_db():
         );
         """)
 
+        # Owners (expire system)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS owners (
             user_id BIGINT PRIMARY KEY,
@@ -53,6 +63,5 @@ def init_db():
         """)
 
         conn.commit()
-
     finally:
         conn.close()
