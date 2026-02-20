@@ -16,18 +16,39 @@ def init_db():
     try:
         cursor = conn.cursor()
 
-        # Chat settings
+        # =============================
+        # chat_settings
+        # =============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_settings (
-            chat_id BIGINT PRIMARY KEY,
-            base_unit TEXT DEFAULT 'USD',
-            timezone INTEGER DEFAULT 0,
-            work_start TIME DEFAULT '00:00',
-            language TEXT DEFAULT 'zh'
+            chat_id BIGINT PRIMARY KEY
         );
         """)
 
-        # History
+        # เพิ่ม field แบบปลอดภัย
+        cursor.execute("""
+        ALTER TABLE chat_settings
+        ADD COLUMN IF NOT EXISTS base_unit TEXT DEFAULT 'USD';
+        """)
+
+        cursor.execute("""
+        ALTER TABLE chat_settings
+        ADD COLUMN IF NOT EXISTS timezone INTEGER DEFAULT 0;
+        """)
+
+        cursor.execute("""
+        ALTER TABLE chat_settings
+        ADD COLUMN IF NOT EXISTS work_start TIME DEFAULT '00:00';
+        """)
+
+        cursor.execute("""
+        ALTER TABLE chat_settings
+        ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'zh';
+        """)
+
+        # =============================
+        # history
+        # =============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id SERIAL PRIMARY KEY,
@@ -44,7 +65,9 @@ def init_db():
         ON history(chat_id, timestamp);
         """)
 
-        # Members (assistant / operator)
+        # =============================
+        # members
+        # =============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS members (
             user_id BIGINT,
@@ -54,7 +77,9 @@ def init_db():
         );
         """)
 
-        # Owners (expire system)
+        # =============================
+        # owners
+        # =============================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS owners (
             user_id BIGINT PRIMARY KEY,
@@ -63,5 +88,6 @@ def init_db():
         """)
 
         conn.commit()
+
     finally:
         conn.close()
