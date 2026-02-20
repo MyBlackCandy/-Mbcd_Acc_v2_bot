@@ -90,16 +90,14 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📖 机器人使用说明\n"
         "━━━━━━━━━━━━━━━\n"
         "🧾 记账输入格式:\n"
-        "+金额\n"
-        "+金额 项目\n"
-        "+金额 数量 项目\n"
+        
+        "+U金额 币数量 币名\n"
         "\n"
         "示例:\n"
-        "+100\n"
-        "+100 USD\n"
+        
         "+95 0.0485761 ETH\n"
-        "-50 0.002 BTC\n"
-        "+1,200.50\n"
+        "+500 0.0002 BTC\n"
+       
         "\n"
         "━━━━━━━━━━━━━━━\n"
         "📊 常用指令:\n"
@@ -108,9 +106,9 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/all 或 /全部 - 查看全部记录\n"
         "/undo 或 /撤销 - 撤销上一条\n"
         "/reset 或 /重置 - 清空当前轮次\n"
+        "/check 或 /检查 - 查看身份\n"
         "\n"
         "👥 权限相关:\n"
-        "/check 或 /检查 - 查看身份\n"
         "/add 或 /添加 - 添加操作者\n"
         "/remove 或 /删除 - 删除操作者\n"
         "\n"
@@ -244,7 +242,11 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     for index, r in enumerate(display, start=start_number):
         amount, qty, item, user, ts = r
 
-        line = f"{index}. {Decimal(amount):,.2f}"
+        # 🔥 转成本地时间
+        local_time.strftime('%Y-%m-%d %H:%M')
+
+        line = f"{index}. {local_time.strftime('%H:%M')} | {Decimal(amount):,.2f}"
+
         if qty and item:
             line += f" ({qty} {item})"
 
