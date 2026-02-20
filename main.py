@@ -273,7 +273,7 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     for k, v in summary.items():
         line = f"{k}: {v['total']:,.2f}"
         if v["qty"] > 0:
-            line += f" | 数量: {v['qty']}"
+            line += f" | 数量: {v['qty']:,}"
         line += f" | {v['count']} 笔"
         text += line + "\n"
 
