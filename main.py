@@ -230,18 +230,19 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
 
     display = rows if show_all else rows[-5:]
 
+    # ✅ คำนวณยอดรวมทั้งวัน
+    total = sum(Decimal(r[0]) for r in rows)
+
     text = "📋 本轮记录:\n\n"
 
-    # 🔥 ถ้ามีมากกว่า 5 รายการ ให้แสดง ... ก่อน
     if len(rows) > 5 and not show_all:
-        text += f"... \n"
+        text += f"... 共 {len(rows)} 条记录\n\n"
 
     start_number = len(rows) - len(display) + 1
 
     for index, r in enumerate(display, start=start_number):
         amount, qty, item, user, ts = r
-        total += Decimal(amount)
-    
+
         line = f"{index}. {Decimal(amount):.2f}"
         if qty and item:
             line += f" ({qty} {item})"
@@ -669,6 +670,7 @@ if __name__ == "__main__":
     # 账单
     app.add_handler(CommandHandler("report", send_summary))
     app.add_handler(MessageHandler(filters.Regex(r"^/账单$"), send_summary))
+    
 
     # 全部
     app.add_handler(CommandHandler("all", lambda u, c: send_summary(u, c, show_all=True)))
