@@ -473,30 +473,42 @@ async def remove_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 # 设置时区
 # ==============================
-
 async def set_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_owner(update):
         return
 
     try:
         tz = int(context.args[0])
+        if tz < -12 or tz > 14:
+            raise ValueError
     except:
-        await update.message.reply_text("用法: /设置时区 +8")
+        await update.message.reply_text("用法: /设置时区 +8  (范围 -12 ~ +14)")
         return
+
+    chat_id = update.effective_chat.id
 
     conn = get_db_connection()
     cursor = conn.cursor()
+
     cursor.execute("""
         INSERT INTO chat_settings (chat_id, timezone)
         VALUES (%s,%s)
         ON CONFLICT (chat_id)
         DO UPDATE SET timezone=%s
-    """, (update.effective_chat.id, tz, tz))
+    """, (chat_id, tz, tz))
+
     conn.commit()
     cursor.close()
     conn.close()
 
-    await update.message.reply_text(f"✅ 时区已设置为 UTC{tz:+}")
+    # 🔥 计算当前本地时间
+    now_utc = datetime.utcnow()
+    now_local = now_utc + timedelta(hours=tz)
+
+    await update.message.reply_text(
+        f"✅ 时区已设置为 UTC{tz:+}\n"
+        f"🕒 当前时间: {now_local.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
 # ==============================
 # 设置时间
@@ -508,24 +520,52 @@ async def set_worktime(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         time_str = context.args[0]
-        datetime.strptime(time_str, "%H:%M")
+        work_time = datetime.strptime(time_str, "%H:%M").time()
     except:
         await update.message.reply_text("用法: /设置时间 14:00")
         return
 
+    chat_id = update.effective_chat.id
+
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # 先获取当前时区
+    cursor.execute("SELECT timezone FROM chat_settings WHERE chat_id=%s", (chat_id,))
+    row = cursor.fetchone()
+    tz = row[0] if row else 0
+
+    # 更新工作时间
     cursor.execute("""
         INSERT INTO chat_settings (chat_id, work_start)
         VALUES (%s,%s)
         ON CONFLICT (chat_id)
         DO UPDATE SET work_start=%s
-    """, (update.effective_chat.id, time_str, time_str))
+    """, (chat_id, time_str, time_str))
+
     conn.commit()
     cursor.close()
     conn.close()
 
-    await update.message.reply_text(f"✅ 工作时间设置为 {time_str}")
+    # 🔥 计算当前本地时间
+    now_utc = datetime.utcnow()
+    now_local = now_utc + timedelta(hours=tz)
+
+    # 🔥 计算当前轮次开始时间
+    today_start_local = datetime.combine(now_local.date(), work_time)
+
+    if now_local < today_start_local:
+        today_start_local -= timedelta(days=1)
+
+    today_end_local = today_start_local + timedelta(days=1)
+
+    await update.message.reply_text(
+        f"✅ 工作时间设置为 {time_str}\n\n"
+        f"🕒 当前时间: {now_local.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"📅 本轮时间:\n"
+        f"{today_start_local.strftime('%Y-%m-%d %H:%M')}  →  "
+        f"{today_end_local.strftime('%Y-%m-%d %H:%M')}"
+    )
 # ==============================
 # 权限检查
 # ==============================
