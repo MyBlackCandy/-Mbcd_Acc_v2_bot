@@ -220,30 +220,27 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
 
     if not rows:
         await update.message.reply_text("📋 今天没有记录")
-        cursor.close(); conn.close()
+        cursor.close()
+        conn.close()
         return
 
-    total = Decimal("0.00")
     summary = {}
+    total = sum(Decimal(r[0]) for r in rows)
 
     display = rows if show_all else rows[-5:]
 
-    # ✅ คำนวณยอดรวมทั้งวัน
-    total = sum(Decimal(r[0]) for r in rows)
-
     text = "📋 本轮记录:\n━━━━━━━━━━━━━━━\n"
-    
 
     if len(rows) > 5 and not show_all:
-        text += f"...\n"
+        text += "...\n"
 
     start_number = len(rows) - len(display) + 1
 
     for index, r in enumerate(display, start=start_number):
         amount, qty, item, user, ts = r
 
-        # 🔥 转成本地时间
-        local_time.strftime('%Y-%m-%d %H:%M')
+        # ✅ 转换成本地时间
+        local_time = ts + timedelta(hours=tz)
 
         line = f"{index}. {local_time.strftime('%H:%M')} | {Decimal(amount):,.2f}"
 
@@ -252,7 +249,7 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
 
         text += line + "\n"
 
-    # 分类汇总
+    # ===== 分类汇总 =====
     for r in rows:
         amount, qty, item, *_ = r
         key = item if item else "默认"
@@ -266,6 +263,7 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
 
         summary[key]["total"] += Decimal(amount)
         summary[key]["count"] += 1
+
         if qty:
             summary[key]["qty"] += Decimal(qty)
 
