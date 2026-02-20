@@ -16,9 +16,9 @@ def init_db():
     try:
         cursor = conn.cursor()
 
-        # ==============================
+        # ==================================================
         # 群组设置
-        # ==============================
+        # ==================================================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_settings (
             chat_id BIGINT PRIMARY KEY,
@@ -37,9 +37,9 @@ def init_db():
         ADD COLUMN IF NOT EXISTS work_start TIME DEFAULT '00:00';
         """)
 
-        # ==============================
-        # 账单记录（升级版）
-        # ==============================
+        # ==================================================
+        # 账单记录
+        # ==================================================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id SERIAL PRIMARY KEY,
@@ -48,11 +48,11 @@ def init_db():
             quantity NUMERIC,
             item TEXT,
             user_name TEXT,
-            timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
 
-        # 🔥 自动升级 amount INTEGER → NUMERIC
+        # 🔥 升级旧数据库 amount INTEGER → NUMERIC
         cursor.execute("""
         DO $$
         BEGIN
@@ -70,7 +70,7 @@ def init_db():
         END$$;
         """)
 
-        # 🔥 自动补充缺失字段（旧数据库升级）
+        # 🔥 自动补充字段（防止旧版本缺失）
         cursor.execute("""
         ALTER TABLE history
         ADD COLUMN IF NOT EXISTS quantity NUMERIC;
@@ -87,9 +87,9 @@ def init_db():
         ON history(chat_id, timestamp);
         """)
 
-        # ==============================
+        # ==================================================
         # 操作者
-        # ==============================
+        # ==================================================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS team_members (
             member_id BIGINT,
@@ -99,13 +99,13 @@ def init_db():
         );
         """)
 
-        # ==============================
+        # ==================================================
         # Owner（无时区版本）
-        # ==============================
+        # ==================================================
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS admins (
-        user_id BIGINT PRIMARY KEY,
-        expire_date TIMESTAMP NOT NULL
+            user_id BIGINT PRIMARY KEY,
+            expire_date TIMESTAMP NOT NULL
         );
         """)
 
