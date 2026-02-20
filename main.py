@@ -203,87 +203,6 @@ def get_work_period(chat_id):
 # ==============================
 # 账单显示
 # ==============================
-
-async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_all=False):
-    chat_id = update.effective_chat.id
-    start_utc, end_utc, tz = get_work_period(chat_id)
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT amount, quantity, item, user_name, timestamp
-        FROM history
-        WHERE chat_id=%s
-        AND timestamp BETWEEN %s AND %s
-        ORDER BY timestamp ASC
-    """, (chat_id, start_utc, end_utc))
-
-    rows = cursor.fetchall()
-
-    if not rows:
-        await update.message.reply_text("📋 今天没有记录")
-        cursor.close(); conn.close()
-        return
-
-    total = Decimal("0.00")
-    summary = {}
-
-    display = rows if show_all else rows[-5:]
-
-    text = "📋 本轮记录:\n\n"
-
-    for r in display:
-        amount, qty, item, user, ts = r
-        total += Decimal(amount)
-
-        line = f"{Decimal(amount):.2f}"
-        if qty and item:
-            line += f" ({qty} {item})"
-
-        text += line + "\n"
-
-    if len(rows) > 5 and not show_all:
-        text += f"... 共 {len(rows)} 条记录\n"
-
-    # 分类汇总
-    for r in rows:
-        amount, qty, item, *_ = r
-        key = item if item else "默认"
-        if key not in summary:
-            summary[key] = {
-                "total": Decimal("0.00"),
-                "qty": Decimal("0.00"),
-                "count": 0
-            }
-
-        summary[key]["total"] += Decimal(amount)
-        summary[key]["count"] += 1
-        if qty:
-            summary[key]["qty"] += Decimal(qty)
-
-    text += "\n━━━━━━━━━━━━━━━\n"
-    text += "📊 分类汇总:\n"
-
-    for k, v in summary.items():
-        line = f"{k}: {v['total']:.2f}"
-        if v["qty"] > 0:
-            line += f" | 数量: {v['qty']}"
-        line += f" | {v['count']} 笔"
-        text += line + "\n"
-
-    text += "━━━━━━━━━━━━━━━\n"
-    text += f"💰 总计: {total:.2f}"
-
-    cursor.close()
-    conn.close()
-
-    await update.message.reply_text(text)
-
-# ==============================
-# 记账（必须存在）
-# ==============================
-
 async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_all=False):
     chat_id = update.effective_chat.id
     start_utc, end_utc, tz = get_work_period(chat_id)
@@ -361,6 +280,61 @@ async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_
     conn.close()
 
     await update.message.reply_text(text)
+
+# ==============================
+# 记账（必须存在）
+# ==============================
+
+async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_operator(update):
+        return
+
+    text = update.message.text.strip()
+
+    # รองรับ:
+    # +100
+    # +100 USD
+    # +95 0.048 ETH
+    # +1,200.50 0.002 BTC
+    match = re.match(
+        r'^([+-])\s*([\d,]+(?:\.\d{1,2})?)'
+        r'(?:\s+([\d\.]+))?'
+        r'(?:\s+([A-Za-z]+))?$',
+        text
+    )
+
+    if not match:
+        return
+
+    sign = match.group(1)
+    amount_str = match.group(2).replace(",", "")
+    quantity = match.group(3)
+    item = match.group(4)
+
+    amount = Decimal(amount_str)
+
+    if sign == "-":
+        amount = -amount
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO history (chat_id, amount, quantity, item, user_name)
+        VALUES (%s,%s,%s,%s,%s)
+    """, (
+        update.effective_chat.id,
+        amount,
+        Decimal(quantity) if quantity else None,
+        item.upper() if item else None,
+        update.message.from_user.first_name
+    ))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    await send_summary(update, context)
 
 # ==============================
 # 撤销
