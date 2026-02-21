@@ -1,14 +1,28 @@
-import os 
-import re 
-import logging 
-from decimal 
-import Decimal 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton 
-from telegram.ext import CallbackQueryHandler 
-from telegram import Update 
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes 
-from database import get_db_connection, init_db import csv from io import StringIO 
+import os
+import re
+import logging
+import csv
+
+from io import StringIO
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
+
+from telegram import (
+    Update,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
+
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+
+from database import get_db_connection, init_db
 
 
 
@@ -43,7 +57,7 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tz, work_start = cursor.fetchone()
 
     # 当前时间
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now()
     now_local = now_utc + timedelta(hours=tz)
 
     # 当前工作轮次
@@ -142,13 +156,23 @@ async def is_owner(update: Update):
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT expire_date FROM admins WHERE user_id=%s",
-                   (update.effective_user.id,))
+
+    cursor.execute(
+        "SELECT expire_date FROM admins WHERE user_id=%s",
+        (update.effective_user.id,)
+    )
     row = cursor.fetchone()
+
     cursor.close()
     conn.close()
 
-    return row and row[0] > datetime.utcnow()
+    if not row:
+        return False
+
+    now = datetime.now()   # ✅ ต้องมี ()
+
+    return row[0] > now
+
 
 
 async def is_operator(update: Update):
@@ -676,7 +700,7 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     row = cursor.fetchone()
 
-    if row and row[0] > datetime.utcnow():
+    if row and row[0] > datetime.now():
         remaining = row[0] - datetime.utcnow()
 
         total_seconds = int(remaining.total_seconds())
@@ -745,7 +769,7 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("SELECT expire_date FROM admins WHERE user_id=%s", (target_id,))
     row = cursor.fetchone()
 
-    now = datetime.now(timezone.utc)  # 🔥 สำคัญ
+    now = datetime.now()  # 🔥 สำคัญ
 
     if row and row[0] > now:
         new_expire = row[0] + timedelta(days=days)
@@ -771,35 +795,7 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 # 启动
 # ==============================
-async def is_owner(update: Update):
-    if await is_master(update):
-         return True
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT expire_date FROM admins WHERE user_id=%s",
-        (update.effective_user.id,)
-    )
-    row = cursor.fetchone()
-
-    cursor.close()
-    conn.close()
-
-    if not row:
-        return False
-
-    now = datetime.now(timezone.utc)
-
-    if row[0] > now:
-        await register_owner_group(
-            update.effective_user.id,
-            update.effective_chat.id
-        )
-        return True
-
-    return False
 # ==============================
 # ownerlist
 # ==============================
