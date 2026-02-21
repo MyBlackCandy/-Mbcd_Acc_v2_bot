@@ -114,6 +114,29 @@ def init_db():
         ON admins(expire_date);
         """)
 
+
+
+
+
+
+        # Owner table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            user_id BIGINT PRIMARY KEY,
+            expire_date TIMESTAMP WITH TIME ZONE NOT NULL
+        );
+        """)
+
+        # Owner ↔ Group mapping
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS owner_groups (
+            user_id BIGINT,
+            chat_id BIGINT,
+            PRIMARY KEY (user_id, chat_id)
+        );
+        """)
+        
+
         conn.commit()
 
     finally:
