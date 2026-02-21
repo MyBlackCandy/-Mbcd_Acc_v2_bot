@@ -1,12 +1,30 @@
 import os
 import re
 import logging
+import csv
+
+from io import StringIO
 from decimal import Decimal
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import CallbackQueryHandler
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from datetime import datetime, timedelta, timezone
+
+from telegram import (
+    Update,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
+
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+
 from database import get_db_connection, init_db
+
+
 
 TOKEN = os.getenv("TOKEN")
 MASTER_ID = os.getenv("MASTER_ID")
@@ -80,6 +98,7 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"本轮状态: {record_status}\n"
         "━━━━━━━━━━━━━━━\n"
         "系统运行正常 ✅"
+        
     )
 
     await update.message.reply_text(text)
@@ -718,8 +737,6 @@ async def check_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==============================
 # Master 续费
 # ==============================
-from datetime import datetime, timedelta, timezone
-
 async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_master(update):
         return
@@ -761,8 +778,154 @@ async def renew_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"✅ 已续费 {days} 天\n"
-        f"到期时间: {new_expire.strftime('%Y-%m-%d %H:%M:%S')}"
+        
     )
+
+# ==============================
+# 启动
+# ==============================
+async def is_owner(update: Update):
+    if await is_master(update):
+         return True
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT expire_date FROM admins WHERE user_id=%s",
+        (update.effective_user.id,)
+    )
+    row = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if not row:
+        return False
+
+    now = datetime.now(timezone.utc)
+
+    if row[0] > now:
+        await register_owner_group(
+            update.effective_user.id,
+            update.effective_chat.id
+        )
+        return True
+
+    return False
+# ==============================
+# ownerlist
+# ==============================
+
+async def owner_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_master(update):
+        await update.message.reply_text("❌ 仅 Master 可使用")
+        return
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT user_id, expire_date
+        FROM admins
+        ORDER BY expire_date DESC
+    """)
+
+    owners = cursor.fetchall()
+
+    if not owners:
+        await update.message.reply_text("无 Owner")
+        return
+
+    now = datetime.now(timezone.utc)
+
+    active_count = 0
+    expired_count = 0
+
+    text = "👑 Owner 管理系统\n━━━━━━━━━━━━━━━\n"
+
+    csv_buffer = StringIO()
+    csv_writer = csv.writer(csv_buffer)
+    csv_writer.writerow(["UserID","Username","Name","Days Left","Hours Left","Groups"])
+
+    for user_id, expire_date in owners:
+
+        delta = expire_date - now
+        total_hours = int(delta.total_seconds() // 3600)
+
+        if expire_date > now:
+            active_count += 1
+            days = delta.days
+            hours = total_hours % 24
+            status_icon = "🟢"
+        else:
+            expired_count += 1
+            days = 0
+            hours = 0
+            status_icon = "🔴"
+
+        # Telegram info
+        try:
+            chat = await context.bot.get_chat(user_id)
+            username = f"@{chat.username}" if chat.username else "-"
+            name = chat.full_name
+        except:
+            username = "-"
+            name = "-"
+
+        # Groups
+        cursor.execute("""
+            SELECT chat_id FROM owner_groups
+            WHERE user_id=%s
+        """, (user_id,))
+        groups = cursor.fetchall()
+
+        group_list = []
+        for (chat_id,) in groups:
+            try:
+                group_chat = await context.bot.get_chat(chat_id)
+                group_name = group_chat.title
+            except:
+                group_name = "Unknown"
+
+            group_list.append(f"{chat_id}({group_name})")
+
+        group_str = ", ".join(group_list) if group_list else "-"
+
+        text += (
+            f"{status_icon} {user_id} | {username} | {name} | "
+            f"{days}天 {hours}小时\n"
+            f"群: {group_str}\n"
+            "━━━━━━━━━━━━━━━\n"
+        )
+
+        csv_writer.writerow([
+            user_id,
+            username,
+            name,
+            days,
+            hours,
+            group_str
+        ])
+
+    cursor.close()
+    conn.close()
+
+    text += (
+        f"\n📊 统计:\n"
+        f"🟢 使用中: {active_count} 人\n"
+        f"🔴 已过期: {expired_count} 人\n"
+        f"👥 总计: {len(owners)} 人"
+    )
+
+    await update.message.reply_text(text)
+
+    csv_buffer.seek(0)
+    await update.message.reply_document(
+        document=csv_buffer,
+        filename="owner_list.csv"
+    )
+
 # ==============================
 # 启动
 # ==============================
@@ -790,12 +953,12 @@ if __name__ == "__main__":
 
     # 账单
     app.add_handler(CommandHandler("report", send_summary))
-    app.add_handler(MessageHandler(filters.Regex(r"^/账单$"), send_summary))
+    app.add_handler(MessageHandler(filters.Regex(r"^/目前记录$"), send_summary))
     
 
     # 全部
     app.add_handler(CommandHandler("all", lambda u, c: send_summary(u, c, show_all=True)))
-    app.add_handler(MessageHandler(filters.Regex(r"^/全部$"), lambda u, c: send_summary(u, c, show_all=True)))
+    app.add_handler(MessageHandler(filters.Regex(r"^/账单$"), lambda u, c: send_summary(u, c, show_all=True)))
 
     # 撤销
     app.add_handler(CommandHandler("undo", undo_last))
@@ -803,15 +966,15 @@ if __name__ == "__main__":
 
     # 重置今日记录
     app.add_handler(CommandHandler("reset", reset_current))
-    app.add_handler(MessageHandler(filters.Regex(r"^/重置$"), reset_current))
+    app.add_handler(MessageHandler(filters.Regex(r"^/清空当日记录$"), reset_current))
 
     # 添加操作者
     app.add_handler(CommandHandler("add", add_member))
-    app.add_handler(MessageHandler(filters.Regex(r"^/添加$"), add_member))
+    app.add_handler(MessageHandler(filters.Regex(r"^/添加操作者$"), add_member))
 
     # 删除操作者
     app.add_handler(CommandHandler("remove", remove_member))
-    app.add_handler(MessageHandler(filters.Regex(r"^/删除$"), remove_member))
+    app.add_handler(MessageHandler(filters.Regex(r"^/删除操作者$"), remove_member))
 
     # 设置时区
     app.add_handler(CommandHandler("timezone", set_timezone))
@@ -824,10 +987,13 @@ if __name__ == "__main__":
     # 续费
     app.add_handler(CommandHandler("renew", renew_owner))
     app.add_handler(MessageHandler(filters.Regex(r"^/续费"), renew_owner))
+    
+    #ownerlist
+    app.add_handler(CommandHandler("ownerlist", owner_list))
 
     # 重置所有记录
     app.add_handler(CommandHandler("resetall", reset_all_confirm))
-    app.add_handler(MessageHandler(filters.Regex(r"^/清空全部$"), reset_all_confirm))
+    app.add_handler(MessageHandler(filters.Regex(r"^/清空此群所有记录$"), reset_all_confirm))
 
     app.add_handler(CallbackQueryHandler(reset_all_execute))
     # 普通文本记账
