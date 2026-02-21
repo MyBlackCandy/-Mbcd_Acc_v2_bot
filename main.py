@@ -2,7 +2,8 @@ import os
 import re
 import logging
 from decimal import Decimal
-
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import CallbackQueryHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from database import get_db_connection, init_db
@@ -384,7 +385,7 @@ async def undo_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_summary(update, context)
 
 # ==============================
-# 重置
+# 重置今日记录
 # ==============================
 
 async def reset_current(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -416,6 +417,82 @@ async def reset_current(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(f"🗑 已清空 {count} 条记录")
+# ==============================
+# 重置此群所有记录
+# ==============================    
+async def reset_all_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_owner(update):
+        await update.message.reply_text("❌ 权限不足")
+        return
+
+    chat_id = update.effective_chat.id
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ 确认删除", callback_data=f"resetall:{chat_id}:{update.effective_user.id}"),
+            InlineKeyboardButton("❌ 取消", callback_data="resetall_cancel"),
+        ]
+    ]
+
+    await update.message.reply_text(
+        "⚠️ 确认删除本群全部历史记录？\n"
+        "此操作不可恢复！",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+# ==============================
+# 按键
+# ==============================
+async def reset_all_execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    if data == "resetall_cancel":
+        await query.edit_message_text("❌ 已取消操作")
+        return
+
+    if not data.startswith("resetall:"):
+        return
+
+    _, chat_id_str, user_id_str = data.split(":")
+
+    chat_id = int(chat_id_str)
+    confirm_user_id = int(user_id_str)
+
+    # 🔐 防止别人点你的按钮
+    if update.effective_user.id != confirm_user_id:
+        await query.answer("⚠️ 只有操作人可以确认", show_alert=True)
+        return
+
+    if not await is_owner(update):
+        await query.edit_message_text("❌ 权限不足")
+        return
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # 🔥 统计数量
+    cursor.execute(
+        "SELECT COUNT(*) FROM history WHERE chat_id=%s",
+        (chat_id,)
+    )
+    count = cursor.fetchone()[0]
+
+    # 🔥 只删除当前群
+    cursor.execute(
+        "DELETE FROM history WHERE chat_id=%s",
+        (chat_id,)
+    )
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    await query.edit_message_text(
+        f"🗑 已删除 {count} 条记录\n"
+        "本群数据已清空"
+    )
 # ==============================
 # 添加操作者
 # ==============================
@@ -724,7 +801,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("undo", undo_last))
     app.add_handler(MessageHandler(filters.Regex(r"^/撤销$"), undo_last))
 
-    # 重置
+    # 重置今日记录
     app.add_handler(CommandHandler("reset", reset_current))
     app.add_handler(MessageHandler(filters.Regex(r"^/重置$"), reset_current))
 
@@ -748,8 +825,11 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("renew", renew_owner))
     app.add_handler(MessageHandler(filters.Regex(r"^/续费"), renew_owner))
 
+    # 重置所有记录
+    app.add_handler(CommandHandler("resetall", reset_all_confirm))
+    app.add_handler(MessageHandler(filters.Regex(r"^/清空全部$"), reset_all_confirm))
 
-
+    app.add_handler(CallbackQueryHandler(reset_all_execute))
     # 普通文本记账
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_msg))
 
