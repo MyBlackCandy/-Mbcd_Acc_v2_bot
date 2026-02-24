@@ -52,6 +52,10 @@ async def is_operator(update: Update):
     if await is_owner(update):
         return True
 
+    # 私聊直接允许 master
+    if update.effective_chat.type == "private":
+        return await is_master(update)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -179,6 +183,10 @@ async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text.strip()
+
+    # 去掉 @botname
+    text = re.sub(r'@\w+', '', text).strip()
+
     match = re.match(r'^([+-])\s*([\d,]+(?:\.\d{1,2})?)$', text)
     if not match:
         return
