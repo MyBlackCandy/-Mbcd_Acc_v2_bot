@@ -1,308 +1,135 @@
 import os
 import re
-import logging
 from decimal import Decimal
-from datetime import datetime
 from telegram import Update
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    filters,
-    ContextTypes
+    Application, CommandHandler,
+    MessageHandler, ContextTypes, filters
 )
 from database import get_db_connection, init_db
 
 TOKEN = os.getenv("TOKEN")
-MASTER_ID = os.getenv("MASTER_ID")
 
-if not TOKEN:
-    raise ValueError("TOKEN not set")
-if not MASTER_ID:
-    raise ValueError("MASTER_ID not set")
+amount_pattern = re.compile(r'^([+-])\s*(\d+(?:\.\d+)?)$')
 
-logging.basicConfig(level=logging.INFO)
-
-# ==============================
-# 权限系统
-# ==============================
-
-async def is_master(update: Update):
-    return str(update.effective_user.id) == str(MASTER_ID)
-
-async def is_owner(update: Update):
-    if await is_master(update):
-        return True
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT expire_date FROM admins WHERE user_id=%s",
-                   (update.effective_user.id,))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return row and row[0] > datetime.utcnow()
-
-async def is_operator(update: Update):
-    if await is_owner(update):
-        return True
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT 1 FROM team_members
-        WHERE member_id=%s AND chat_id=%s
-    """, (update.effective_user.id, update.effective_chat.id))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return bool(row)
-
-# ==============================
-# 开始
-# ==============================
-
-async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =====================
+# START
+# =====================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 机器人已启动\n"
-        "发送: +10 或 -5\n"
-        "可用 reply 指定对象\n\n"
-        "/report 查看最近\n"
-        "/all 查看全部\n"
-        "/sum 按人汇总\n"
-        "/undo 撤销\n"
-        "/reset 清空"
+        "🤖 บอทเริ่มทำงาน\n"
+        "ส่ง: +100 หรือ -50\n"
+        "ใช้ reply เพื่อระบุคน\n"
+        "/report ดูรายการ\n"
+        "/sum สรุปตามคน"
     )
-    await send_summary(update, context)
 
-# ==============================
-# 显示账单（带跳转）
-# ==============================
+# =====================
+# HANDLE MESSAGE
+# =====================
+async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    match = amount_pattern.match(text)
+    if not match:
+        return
 
-async def send_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, show_all=False):
-    chat_id = update.effective_chat.id
+    sign, num = match.groups()
+    amount = Decimal(num)
+    if sign == "-":
+        amount = -amount
+
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user.full_name
+        reply_msg_id = update.message.reply_to_message.message_id
+    else:
+        target_user = update.message.from_user.full_name
+        reply_msg_id = None
 
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT amount, user_name, timestamp, message_id
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO history
+        (chat_id, message_id, reply_message_id, user_name, amount)
+        VALUES (%s,%s,%s,%s,%s)
+    """, (
+        update.effective_chat.id,
+        update.message.message_id,
+        reply_msg_id,
+        target_user,
+        amount
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text(f"✅ บันทึก {amount} ให้ {target_user}")
+
+# =====================
+# REPORT
+# =====================
+async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT amount, user_name, created_at, reply_message_id
         FROM history
         WHERE chat_id=%s
-        ORDER BY timestamp ASC
-    """, (chat_id,))
-    rows = cursor.fetchall()
-    cursor.close()
+        ORDER BY id DESC
+        LIMIT 10
+    """, (update.effective_chat.id,))
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
     if not rows:
-        await update.message.reply_text("📋 没有任何记录")
+        await update.message.reply_text("📭 ไม่มีข้อมูล")
         return
 
-    total = sum(Decimal(r[0]) for r in rows)
-    display = rows if show_all else rows[-6:]
-    start_index = len(rows) - len(display) + 1
-
-    text = "📋 记录:\n━━━━━━━━━━━━━━━\n"
-    for i, r in enumerate(display):
-        dt = r[2].strftime("%Y-%m-%d %H:%M")
-        if r[3]:
-            link = f"https://t.me/c/{str(chat_id)[4:]}/{r[3]}"
-            text += f"{start_index+i}. {dt} | {r[0]} ({r[1]})\n{link}\n"
-        else:
-            text += f"{start_index+i}. {dt} | {r[0]} ({r[1]})\n"
-
-    text += "━━━━━━━━━━━━━━━\n"
-    text += f"合计: {total}"
+    text = "📒 รายการล่าสุด:\n"
+    for i, r in enumerate(reversed(rows), 1):
+        t = r[2].strftime("%Y-%m-%d %H:%M")
+        link = f"https://t.me/c/{str(update.effective_chat.id)[4:]}/{r[3]}" if r[3] else "-"
+        text += f"{i}. {t} | {r[0]} ({r[1]})\n{link}\n"
 
     await update.message.reply_text(text)
 
-# ==============================
-# 按人汇总
-# ==============================
-
-async def send_sum_by_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-
+# =====================
+# SUM
+# =====================
+async def sum_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
+    cur = conn.cursor()
+    cur.execute("""
         SELECT user_name, SUM(amount)
         FROM history
         WHERE chat_id=%s
         GROUP BY user_name
         ORDER BY SUM(amount) DESC
-    """, (chat_id,))
-    rows = cursor.fetchall()
-    cursor.close()
+    """, (update.effective_chat.id,))
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
 
     if not rows:
-        await update.message.reply_text("📭 没有任何记录")
+        await update.message.reply_text("📭 ไม่มีข้อมูล")
         return
 
-    text = "👥 按人汇总:\n━━━━━━━━━━━━━━━\n"
+    text = "👥 สรุปตามคน:\n"
     for i, r in enumerate(rows, 1):
         text += f"{i}. {r[0]} : {r[1]}\n"
 
     await update.message.reply_text(text)
 
-# ==============================
-# 记账（保存 message_id）
-# ==============================
-
-async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_operator(update):
-        return
-
-    text = update.message.text.strip()
-    match = re.match(r'^([+-])\s*([\d,]+(?:\.\d{1,2})?)$', text)
-    if not match:
-        return
-
-    sign = match.group(1)
-    number_str = match.group(2).replace(",", "")
-    amount = Decimal(number_str)
-    if sign == "-":
-        amount = -amount
-
-    if update.message.reply_to_message:
-        target_user = update.message.reply_to_message.from_user.first_name
-    else:
-        target_user = update.message.from_user.first_name
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO history (chat_id, message_id, amount, user_name) VALUES (%s,%s,%s,%s)",
-        (update.effective_chat.id, update.message.message_id, amount, target_user)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    await send_summary(update, context)
-
-# ==============================
-# 撤销
-# ==============================
-
-async def undo_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_operator(update):
-        return
-
-    chat_id = update.effective_chat.id
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, amount FROM history
-        WHERE chat_id=%s
-        ORDER BY timestamp DESC LIMIT 1
-    """, (chat_id,))
-    row = cursor.fetchone()
-
-    if not row:
-        await update.message.reply_text("⚠️ 没有可撤销的记录")
-        cursor.close(); conn.close()
-        return
-
-    cursor.execute("DELETE FROM history WHERE id=%s", (row[0],))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    await update.message.reply_text(f"↩️ 已撤销: {row[1]}")
-    await send_summary(update, context)
-
-# ==============================
-# 重置
-# ==============================
-
-async def reset_current(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_operator(update):
-        return
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM history WHERE chat_id=%s",
-                   (update.effective_chat.id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    await update.message.reply_text("🗑️ 已清空所有记录")
-
-# ==============================
-# 添加操作者
-# ==============================
-
-async def add_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_owner(update):
-        return
-
-    if not update.message.reply_to_message:
-        await update.message.reply_text("⚠️ 请用回复方式添加成员")
-        return
-
-    target = update.message.reply_to_message.from_user
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO team_members (member_id, chat_id, username)
-        VALUES (%s,%s,%s)
-        ON CONFLICT (member_id, chat_id)
-        DO UPDATE SET username=%s
-    """, (target.id, update.effective_chat.id,
-          target.first_name, target.first_name))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    await update.message.reply_text(f"✅ 已添加: {target.first_name}")
-
-# ==============================
-# 删除操作者
-# ==============================
-
-async def remove_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_owner(update):
-        return
-
-    if not update.message.reply_to_message:
-        await update.message.reply_text("⚠️ 请用回复方式删除成员")
-        return
-
-    target = update.message.reply_to_message.from_user
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        DELETE FROM team_members
-        WHERE member_id=%s AND chat_id=%s
-    """, (target.id, update.effective_chat.id))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    await update.message.reply_text(f"🗑️ 已删除: {target.first_name}")
-
-# ==============================
-# 启动
-# ==============================
-
+# =====================
+# MAIN
+# =====================
 if __name__ == "__main__":
     init_db()
     app = Application.builder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start_bot))
-    app.add_handler(CommandHandler("report", send_summary))
-    app.add_handler(CommandHandler("all", lambda u, c: send_summary(u, c, show_all=True)))
-    app.add_handler(CommandHandler("sum", send_sum_by_user))
-    app.add_handler(CommandHandler("undo", undo_last))
-    app.add_handler(CommandHandler("reset", reset_current))
-    app.add_handler(CommandHandler("add", add_member))
-    app.add_handler(CommandHandler("remove", remove_member))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("report", report))
+    app.add_handler(CommandHandler("sum", sum_user))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_msg))
 
     app.run_polling()
